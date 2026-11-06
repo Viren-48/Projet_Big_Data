@@ -1,0 +1,30 @@
+[
+  {"id": "e-pass", "index": 1, "period": 1, "timestamp": "00:00:01.000", "minute": 0, "second": 1,
+   "type": {"id": 30, "name": "Pass"}, "team": {"id": 1, "name": "Home FC"}, "player": {"id": 10, "name": "Passeur"},
+   "play_pattern": {"id": 9, "name": "From Kick Off"}, "location": [60.0, 40.0]},
+  {"id": "e-shot-central", "index": 2, "period": 1, "timestamp": "00:10:00.000", "minute": 10, "second": 0,
+   "type": {"id": 16, "name": "Shot"}, "team": {"id": 1, "name": "Home FC"}, "player": {"id": 9, "name": "Avant-centre"},
+   "play_pattern": {"id": 1, "name": "Regular Play"}, "location": [108.0, 40.0], "under_pressure": true,
+   "shot": {"statsbomb_xg": 0.31, "end_location": [120.0, 39.0, 1.0],
+            "body_part": {"id": 40, "name": "Right Foot"}, "type": {"id": 87, "name": "Open Play"},
+            "outcome": {"id": 97, "name": "Goal"}, "technique": {"id": 93, "name": "Normal"}, "first_time": true,
+            "freeze_frame": [
+              {"location": [112.0, 40.0], "player": {"id": 21, "name": "Def A"}, "position": {"id": 3, "name": "Right Center Back"}, "teammate": false},
+              {"location": [116.0, 41.0], "player": {"id": 22, "name": "Def B"}, "position": {"id": 5, "name": "Left Center Back"}, "teammate": false},
+              {"location": [110.0, 20.0], "player": {"id": 23, "name": "Def C"}, "position": {"id": 2, "name": "Right Back"}, "teammate": false},
+              {"location": [113.0, 41.0], "player": {"id": 11, "name": "Coéquipier"}, "position": {"id": 23, "name": "Center Forward"}, "teammate": true},
+              {"location": [119.0, 40.0], "player": {"id": 1, "name": "Gardien"}, "position": {"id": 1, "name": "Goalkeeper"}, "teammate": false}
+            ]}},
+  {"id": "e-shot-header", "index": 3, "period": 2, "timestamp": "00:20:00.000", "minute": 65, "second": 0,
+   "type": {"id": 16, "name": "Shot"}, "team": {"id": 2, "name": "Away United"}, "player": {"id": 4, "name": "Défenseur"},
+   "play_pattern": {"id": 2, "name": "From Corner"}, "location": [114.0, 30.0],
+   "shot": {"statsbomb_xg": 0.05, "end_location": [118.0, 33.0],
+            "body_part": {"id": 37, "name": "Head"}, "type": {"id": 87, "name": "Open Play"},
+            "outcome": {"id": 100, "name": "Saved"}, "technique": {"id": 93, "name": "Normal"}}},
+  {"id": "e-penalty", "index": 4, "period": 2, "timestamp": "00:40:00.000", "minute": 85, "second": 0,
+   "type": {"id": 16, "name": "Shot"}, "team": {"id": 1, "name": "Home FC"}, "player": {"id": 9, "name": "Avant-centre"},
+   "play_pattern": {"id": 4, "name": "From Free Kick"}, "location": [108.0, 40.0],
+   "shot": {"statsbomb_xg": 0.78, "end_location": [120.0, 42.0, 0.5],
+            "body_part": {"id": 40, "name": "Right Foot"}, "type": {"id": 88, "name": "Penalty"},
+            "outcome": {"id": 97, "name": "Goal"}, "technique": {"id": 93, "name": "Normal"}}}
+]

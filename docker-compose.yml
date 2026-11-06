@@ -1,0 +1,207 @@
+name: xg-live
+
+# ----- Blocs réutilisés -----------------------------------------------------------------------
+x-hadoop: &hadoop
+  image: apache/hadoop:3.3.5
+  platform: linux/amd64
+  env_file: ./infra/hadoop.env
+
+# Même image pour le master, les workers et le driver : mêmes versions de Python et de PySpark partout.
+x-spark: &spark
+  image: xg-live-spark:1.0
+  build:
+    context: .
+    dockerfile: infra/docker/spark.Dockerfile
+  env_file: ./.env
+  working_dir: /app
+
+services:
+  # ===== Stockage : HDFS (1 NameNode + 2 DataNodes, réplication 2) ===============================
+  # Donne les droits de l'utilisateur hadoop aux volumes (créés par Docker avec le propriétaire root).
+  hdfs-init:
+    <<: *hadoop
+    user: root
+    entrypoint: ["sh", "-c", "chown -R hadoop /dfs/nn /dfs/dn1 /dfs/dn2"]
+    volumes:
+      - nn-data:/dfs/nn
+      - dn1-data:/dfs/dn1
+      - dn2-data:/dfs/dn2
+    restart: "no"
+
+  namenode:
+    <<: *hadoop
+    hostname: namenode
+    # formate le NameNode une seule fois (volume vide), puis le démarre
+    command:
+      - sh
+      - -c
+      - "[ -d /tmp/hadoop/dfs/name/current ] || hdfs namenode -format -force -nonInteractive; exec hdfs namenode"
+    depends_on:
+      hdfs-init:
+        condition: service_completed_successfully
+    ports:
+      - "9870:9870"   # UI HDFS
+    volumes:
+      - nn-data:/tmp/hadoop/dfs
+    healthcheck:   # prêt quand les deux DataNodes sont enregistrés
+      test: ["CMD-SHELL", "hdfs dfsadmin -report 2>/dev/null | grep -q 'Live datanodes (2)'"]
+      interval: 20s
+      timeout: 30s
+      retries: 20
+      start_period: 30s
+
+  datanode1:
+    <<: *hadoop
+    hostname: datanode1
+    command: ["hdfs", "datanode"]
+    depends_on:
+      hdfs-init:
+        condition: service_completed_successfully
+      namenode:
+        condition: service_started
+    volumes:
+      - dn1-data:/tmp/hadoop/dfs
+
+  datanode2:
+    <<: *hadoop
+    hostname: datanode2
+    command: ["hdfs", "datanode"]
+    depends_on:
+      hdfs-init:
+        condition: service_completed_successfully
+      namenode:
+        condition: service_started
+    volumes:
+      - dn2-data:/tmp/hadoop/dfs
+
+  # ===== Ingestion : Kafka ======================================================================
+  kafka:
+    image: apache/kafka:3.7.0
+    hostname: kafka
+    ports:
+      - "29092:29092"  # accès depuis la machine hôte
+    environment:
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_LISTENERS: PLAINTEXT://:9092,CONTROLLER://:9093,PLAINTEXT_HOST://:29092
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092,PLAINTEXT_HOST://localhost:29092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+      KAFKA_NUM_PARTITIONS: 3
+    healthcheck:
+      test: ["CMD-SHELL", "/opt/kafka/bin/kafka-broker-api-versions.sh --bootstrap-server localhost:9092 >/dev/null 2>&1"]
+      interval: 10s
+      timeout: 10s
+      retries: 12
+
+  # ===== Calcul : cluster Spark standalone (1 master + 2 workers) ================================
+  spark-master:
+    <<: *spark
+    hostname: spark-master
+    command: ["spark-class", "org.apache.spark.deploy.master.Master",
+              "--host", "spark-master", "--port", "7077", "--webui-port", "8080"]
+    ports:
+      - "8090:8080"   # UI du cluster : liste des workers et des applications
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import socket; socket.create_connection(('spark-master', 7077), 2)\""]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  spark-worker-1:
+    <<: *spark
+    hostname: spark-worker-1
+    command: ["spark-class", "org.apache.spark.deploy.worker.Worker", "spark://spark-master:7077",
+              "--cores", "${WORKER_CORES:-2}", "--memory", "${WORKER_MEMORY:-2g}", "--webui-port", "8081"]
+    depends_on:
+      spark-master:
+        condition: service_healthy
+    ports:
+      - "8083:8081"
+    volumes:
+      - ./:/app
+
+  spark-worker-2:
+    <<: *spark
+    hostname: spark-worker-2
+    command: ["spark-class", "org.apache.spark.deploy.worker.Worker", "spark://spark-master:7077",
+              "--cores", "${WORKER_CORES:-2}", "--memory", "${WORKER_MEMORY:-2g}", "--webui-port", "8081"]
+    depends_on:
+      spark-master:
+        condition: service_healthy
+    ports:
+      - "8082:8081"
+    volumes:
+      - ./:/app
+
+  # Driver : lance les jobs (`make <job>`) en mode client ; les calculs tournent sur les workers.
+  spark:
+    <<: *spark
+    hostname: spark
+    command: ["sleep", "infinity"]
+    depends_on:
+      namenode:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+      spark-worker-1:
+        condition: service_started
+      spark-worker-2:
+        condition: service_started
+    ports:
+      - "4040:4040"   # UI Spark du job en cours
+    volumes:
+      - ./:/app
+      - ./data:/data:ro
+      - serving:/serving
+      - ivy:/root/.ivy2
+
+  # ===== Restitution : PostgreSQL + dashboard Streamlit =========================================
+  postgres:
+    image: postgres:16.4-alpine
+    hostname: postgres
+    env_file: ./.env   # POSTGRES_DB, POSTGRES_USER, POSTGRES_PASSWORD
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  dashboard:
+    build:
+      context: .
+      dockerfile: infra/docker/dashboard.Dockerfile
+    hostname: dashboard
+    depends_on:
+      kafka:
+        condition: service_healthy
+    env_file: ./.env
+    working_dir: /app
+    command: ["streamlit", "run", "dashboard/app.py", "--server.port=8501", "--server.address=0.0.0.0"]
+    ports:
+      - "8501:8501"
+    volumes:
+      - ./:/app
+      - ./data:/data:ro
+      - serving:/serving:ro
+
+# Volumes nommés : conservés par `docker compose down` (HDFS, PostgreSQL), effacés par `down -v`.
+volumes:
+  nn-data:    # métadonnées du NameNode
+  dn1-data:   # blocs du DataNode 1
+  dn2-data:   # blocs du DataNode 2
+  pgdata:     # base PostgreSQL
+  serving:    # modèle exporté / métriques partagés Spark -> dashboard
+  ivy:        # cache Maven du driver (connecteur Kafka)

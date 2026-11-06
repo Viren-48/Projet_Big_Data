@@ -1,0 +1,39 @@
+flowchart TB
+    SRC["StatsBomb Open Data (JSON, GitHub)"]
+
+    subgraph ING["① INGESTION"]
+        PROD["producteur Python<br/>rejeu Euro 2024 + CAN 2023"]
+        KAFKA[("Kafka 3.7<br/>match-events · xg-shots · xg-team-totals")]
+        PROD --> KAFKA
+    end
+
+    subgraph SPK["② CALCUL : cluster Spark 3.5.3"]
+        DRV["spark (driver)<br/>jobs batch + streaming"]
+        MST["spark-master"]
+        W1["spark-worker-1"]
+        W2["spark-worker-2"]
+        DRV --> MST
+        MST --> W1
+        MST --> W2
+    end
+
+    subgraph STO["③ STOCKAGE : HDFS, réplication 2"]
+        NN["namenode"]
+        DN1[("datanode1")]
+        DN2[("datanode2")]
+        NN --- DN1
+        NN --- DN2
+    end
+
+    subgraph RES["④ RESTITUTION"]
+        PG[("PostgreSQL<br/>prédictions · indicateurs batch · métriques ML")]
+        DASH["Streamlit (bonus)"]
+    end
+
+    SRC -- "rejeu des événements" --> PROD
+    SRC -- "historique JSON (batch)" --> DRV
+    KAFKA -- "flux d'événements" --> DRV
+    DRV -- "raw, curated, features, modèle, checkpoints" --> NN
+    DRV -- "xG des tirs" --> KAFKA
+    DRV -- "prédictions + indicateurs" --> PG
+    KAFKA -- "xG en direct" --> DASH
