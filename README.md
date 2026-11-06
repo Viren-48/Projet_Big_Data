@@ -1,4 +1,4 @@
-# xG en direct — Projet Big Data (Plateformes et Analytics)
+# xG en direct - Projet Big Data (Plateformes et Analytics)
 
 Modèle d'expected goals (xG) entraîné en batch sur StatsBomb Open Data, puis déployé sur un flux Kafka de matchs rejoués (Euro 2024, CAN 2023). Sujet, dataset et tâche ML : [docs/livrable1.md](docs/livrable1.md). Architecture détaillée : [docs/architecture.md](docs/architecture.md).
 
